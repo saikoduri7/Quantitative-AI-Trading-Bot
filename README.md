@@ -1,45 +1,291 @@
 # Quantitative AI Trading System
 
-A machine-learning trading research project that predicts next-day SPY behavior and evaluates model-driven strategies under transaction costs. The project compares an LSTM return regressor, an LSTM direction classifier, logistic regression, an always-up baseline, and SPY buy-and-hold.
+An end-to-end machine learning pipeline for predicting next-day SPY market behavior using LSTM neural networks and statistical baselines. The system engineers technical features from historical market data, generates model-driven trading signals, and evaluates them through transaction-cost-aware backtesting.
 
 ## Pipeline
 
-`SPY OHLCV → feature engineering → chronological split → train-only scaling → 60-day sequences → model training → signal generation → transaction-cost backtest → risk evaluation`
+```
+SPY OHLCV Data
+      ↓
+Feature Engineering
+      ↓
+Chronological Split & Scaling
+      ↓
+60-Day Sequences
+      ↓
+Model Training
+      ↓
+Trading Signals
+      ↓
+Backtesting
+      ↓
+Performance Evaluation
+```
 
-The feature set contains daily return, 5/20/50-day moving averages, 5/20-day momentum, 10/20-day rolling volatility, volume change, and normalized intraday high-low range.
+## 1. Market Data
 
-## Models
+Historical daily SPY OHLCV data is collected using `yfinance`, including open, high, low, close, and volume.
 
-- **LSTM regression:** predicts the next-day return using MSE loss.
-- **LSTM classification:** predicts the probability that the next-day return is positive using binary cross-entropy with logits.
-- **Logistic regression:** simple non-sequential classification baseline using the same engineered features.
-- **Always-Up / Buy & Hold:** sanity-check baselines that expose whether a model is learning genuine timing information or mostly the market's upward bias.
+Daily return is defined as:
 
-Both LSTMs use two recurrent layers with 64 hidden units, dropout, a 32-unit dense layer, and early stopping on chronological validation loss.
+$$
+R_t = \frac{P_t-P_{t-1}}{P_{t-1}}
+$$
 
-## Notebook results
+where $P_t$ is the closing price on day $t$.
 
-The committed exploration notebook produced the following test-period results:
+## 2. Feature Engineering
 
-| Model | Direction Accuracy |
-|---|---:|
-| Classification LSTM | 56.94% |
-| Logistic Regression | 57.12% |
-| Always-Up Baseline | 56.94% |
+Ten features are generated from the raw market data:
 
-| Strategy | Total Return | Sharpe | Max Drawdown | Trades |
-|---|---:|---:|---:|---:|
-| Classification LSTM | 49.18% | 1.18 | -18.76% | 1 |
-| Logistic Regression | 35.58% | 0.92 | -25.05% | 11 |
-| SPY Buy & Hold | 49.25% | 1.18 | -18.76% | 1 |
+| Feature | Description |
+|---|---|
+| **Return** | Daily percentage change in closing price |
+| **SMA 5** | 5-day average closing price; short-term trend |
+| **SMA 20** | 20-day average closing price; medium-term trend |
+| **SMA 50** | 50-day average closing price; longer-term trend |
+| **Momentum 5** | Price change over the previous 5 trading days |
+| **Momentum 20** | Price change over the previous 20 trading days |
+| **Volatility 10** | 10-day rolling standard deviation of returns |
+| **Volatility 20** | 20-day rolling standard deviation of returns |
+| **Volume Change** | Daily percentage change in trading volume |
+| **High-Low Range** | Intraday price range relative to closing price |
 
-The classification LSTM assigned test probabilities in a narrow 53.33%–55.05% range and generated a long signal on all 562 aligned test days. The earlier regression LSTM also generated a long signal on all 562 test days and matched the 56.94% always-up directional baseline. These diagnostics show why predictive accuracy alone is not evidence of a useful trading signal.
+The primary feature formulas are:
 
-## Repository structure
+$$
+SMA_{n,t} = \frac{1}{n}\sum_{i=0}^{n-1}P_{t-i}
+$$
+
+$$
+Momentum_{n,t} = \frac{P_t}{P_{t-n}}-1
+$$
+
+$$
+Volatility_{n,t} = Std(R_t,\ldots,R_{t-n+1})
+$$
+
+$$
+VolumeChange_t = \frac{V_t-V_{t-1}}{V_{t-1}}
+$$
+
+$$
+HL_t = \frac{High_t-Low_t}{Close_t}
+$$
+
+## 3. Prediction Targets
+
+Two LSTM formulations are evaluated.
+
+**Return Regression** predicts the numerical next-day return:
+
+$$
+y_t = R_{t+1}
+$$
+
+**Direction Classification** predicts whether the next-day return is positive:
+
+$$
+y_t =
+\begin{cases}
+1, & R_{t+1}>0 \\
+0, & R_{t+1}\leq0
+\end{cases}
+$$
+
+This allows comparison between predicting exact return magnitude and directly predicting market direction.
+
+## 4. Data Preparation
+
+Data is split chronologically into:
+
+- 70% training
+- 15% validation
+- 15% testing
+
+Features are standardized using:
+
+$$
+z=\frac{x-\mu}{\sigma}
+$$
+
+The scaler is fit **only on training data** and then applied to validation and test data to prevent future information leakage.
+
+## 5. LSTM Training Observations
+
+Each trading day is represented by a 10-feature vector:
+
+$$
+x_t =
+\begin{bmatrix}
+R_t &
+SMA_{5,t} &
+SMA_{20,t} &
+SMA_{50,t} &
+MOM_{5,t} &
+MOM_{20,t} &
+\sigma_{10,t} &
+\sigma_{20,t} &
+\Delta V_t &
+HL_t
+\end{bmatrix}
+$$
+
+The LSTM receives the previous **60 trading days** for each prediction. Therefore, one training observation is:
+
+$$
+X_t =
+\begin{bmatrix}
+x_{t-59}\\
+x_{t-58}\\
+\vdots\\
+x_t
+\end{bmatrix}
+\in \mathbb{R}^{60\times10}
+$$
+
+The full model input has shape:
+
+$$
+N\times60\times10
+$$
+
+where $N$ is the number of sequences. Each $60\times10$ matrix produces one prediction for day $t+1$.
+
+## 6. LSTM Architecture
+
+Both LSTMs use:
+
+```
+60 Days × 10 Features
+        ↓
+2-Layer LSTM
+64 Hidden Units
+        ↓
+Linear (64 → 32)
+        ↓
+ReLU
+        ↓
+Linear (32 → 1)
+        ↓
+Prediction
+```
+
+The **regression LSTM** minimizes mean squared error:
+
+$$
+MSE=\frac{1}{N}\sum_{i=1}^{N}(y_i-\hat y_i)^2
+$$
+
+The **classification LSTM** is trained with binary cross-entropy. Its output logit is converted into an upward-movement probability using:
+
+$$
+p_t=\frac{1}{1+e^{-z_t}}
+$$
+
+Early stopping based on validation loss is used to limit overfitting.
+
+## 7. Logistic Regression Baseline
+
+A Logistic Regression classifier provides a simpler benchmark.
+
+Unlike the LSTM's $60\times10$ sequence, Logistic Regression receives only the current day's feature vector:
+
+$$
+x_t\in\mathbb{R}^{10}
+$$
+
+This tests whether the LSTM's temporal complexity provides useful predictive information beyond a simple linear classifier.
+
+## 8. Trading Signals
+
+Classification probabilities are converted into positions using validation-selected confidence thresholds:
+
+$$
+S_t =
+\begin{cases}
++1, & p_t>U \\
+0, & L\leq p_t\leq U \\
+-1, & p_t<L
+\end{cases}
+$$
+
+where `+1` is long, `0` is cash, and `-1` is short.
+
+Thresholds are selected using validation data rather than test performance.
+
+## 9. Backtesting
+
+Strategy return is calculated as:
+
+$$
+R_t^{strategy}=S_tR_t
+$$
+
+Position changes incur transaction costs:
+
+$$
+T_t=|S_t-S_{t-1}|
+$$
+
+$$
+R_t^{net}=R_t^{strategy}-cT_t
+$$
+
+Portfolio value then compounds from an initial $10,000:
+
+$$
+V_t=V_{t-1}(1+R_t^{net})
+$$
+
+## 10. Evaluation
+
+Models are evaluated using both **ML metrics** and **trading metrics**.
+
+Prediction metrics include accuracy, precision, recall, F1 score, and confusion matrices.
+
+Trading performance includes:
+
+**Total Return**
+
+$$
+R_{total}=\frac{V_T}{V_0}-1
+$$
+
+**Annualized Sharpe Ratio**
+
+$$
+Sharpe=\frac{\bar R}{\sigma_R}\sqrt{252}
+$$
+
+**Maximum Drawdown**
+
+$$
+DD_t=\frac{V_t-\max_{s\leq t}V_s}{\max_{s\leq t}V_s}
+$$
+
+## 11. Results & Findings
+
+The experiments compared:
+
+- LSTM return regression
+- LSTM direction classification
+- Logistic Regression
+- Always-up baseline
+- SPY buy-and-hold
+
+A key finding was that **prediction accuracy did not necessarily translate into market-timing ability**.
+
+The classification LSTM produced probabilities within a narrow range and remained long throughout the evaluated test period, causing its portfolio to closely track buy-and-hold. Logistic Regression similarly predicted upward movement on nearly every observation.
+
+The experiments demonstrate the importance of comparing financial ML models against simple baselines and evaluating predictions through realistic backtesting rather than accuracy alone.
+
+## 12. Project Structure
 
 ```text
 quant-ai-trading/
-├── notebooks/exploration.ipynb
+├── notebooks/
+│   └── exploration.ipynb
 ├── src/
 │   ├── data.py
 │   ├── features.py
@@ -51,33 +297,35 @@ quant-ai-trading/
 │       ├── lstm.py
 │       └── baseline.py
 ├── models/
-├── configs/config.json
+├── configs/
+│   └── config.json
 ├── outputs/
 ├── train.py
 ├── run_backtest.py
-└── requirements.txt
+├── requirements.txt
+└── README.md
 ```
 
-## Run locally
+## 13. Usage
+
+Install dependencies:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
+```
+
+Train the models:
+
+```bash
 python train.py
+```
+
+Run the backtest:
+
+```bash
 python run_backtest.py
 ```
 
-`train.py` downloads the data, recreates the features and chronological split, fits the scaler on training data only, trains both LSTMs with early stopping, fits logistic regression, and writes model artifacts to `models/`.
-
-`run_backtest.py` loads the trained artifacts, evaluates the classification models on aligned dates, runs the cost-aware backtests, and writes comparison CSVs and plots to `outputs/`.
-
-## Methodology notes
-
-The notebook uses a 70%/15%/15% chronological train/validation/test split and a 0.05% transaction cost per unit of position turnover. The classification trading thresholds (long above 0.52, short below 0.48) were selected from a small predetermined set using validation return rather than test return.
-
-The test period was inspected repeatedly during development, so its results should be treated as exploratory rather than a pristine final estimate of future performance. A stronger next version would freeze the pipeline and evaluate once on a new holdout period or use walk-forward evaluation.
-
 ## Technologies
 
-Python, PyTorch, scikit-learn, pandas, NumPy, yfinance, Matplotlib, joblib.
+Python · PyTorch · scikit-learn · pandas · NumPy · Matplotlib · yfinance
