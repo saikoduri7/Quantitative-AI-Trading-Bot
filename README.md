@@ -199,20 +199,17 @@ This tests whether the LSTM's temporal complexity provides useful predictive inf
 
 ## 8. Trading Signals
 
-Classification probabilities are converted into positions using validation-selected confidence thresholds:
+The classification model outputs a probability $p_t$ that SPY will have a positive return on the next trading day.
 
-$$
-S_t =
-\begin{cases}
-+1, & p_t>U \\
-0, & L\leq p_t\leq U \\
--1, & p_t<L
-\end{cases}
-$$
+Predictions are converted into three possible positions using two confidence thresholds:
 
-where `+1` is long, `0` is cash, and `-1` is short.
+- **Long (+1):** $p_t > 0.52$
+- **Cash (0):** $0.48 \leq p_t \leq 0.52$
+- **Short (-1):** $p_t < 0.48$
 
-Thresholds are selected using validation data rather than test performance.
+The thresholds were selected using validation data rather than test performance.
+
+For example, a predicted probability of 0.56 generates a long position, while a probability of 0.44 generates a short position.
 
 ## 9. Backtesting
 
