@@ -1,0 +1,20 @@
+{
+  "ticker": "SPY",
+  "start_date": "2010-01-01",
+  "end_date": "2026-09-01",
+  "sequence_length": 60,
+  "train_fraction": 0.70,
+  "validation_fraction": 0.15,
+  "hidden_size": 64,
+  "num_layers": 2,
+  "dropout": 0.2,
+  "batch_size": 64,
+  "learning_rate": 0.001,
+  "epochs": 50,
+  "patience": 5,
+  "long_threshold": 0.52,
+  "short_threshold": 0.48,
+  "regression_signal_threshold": 0.001,
+  "transaction_cost": 0.0005,
+  "initial_capital": 10000
+}
