@@ -1,6 +1,6 @@
 # Quantitative AI Trading System
 
-An end-to-end machine learning pipeline for predicting next-day SPY market behavior using LSTM neural networks and statistical baselines. The system engineers technical features from historical market data, generates model-driven trading signals, and evaluates them through transaction-cost-aware backtesting.
+An end-to-end machine learning pipeline for predicting next-day SPY market behavior using LSTM neural networks and statistical baselines. The system uses technical features from historical market data, generates model-driven trading signals, and evaluates them through transaction-cost-aware backtesting.
 
 ## Pipeline
 
@@ -271,7 +271,7 @@ The experiments compared:
 - Always-up baseline
 - SPY buy-and-hold
 
-A key finding was that **prediction accuracy did not necessarily translate into market-timing ability**.
+A key finding was that **prediction accuracy did not necessarily translate into market-timing ability**. However, this model needs to be tested on other stocks to find more prediction findings.
 
 The classification LSTM produced probabilities within a narrow range and remained long throughout the evaluated test period, causing its portfolio to closely track buy-and-hold. Logistic Regression similarly predicted upward movement on nearly every observation.
 
